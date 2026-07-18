@@ -89,8 +89,13 @@ static void portal_emit_key(PortalData *app, gint32 keycode, guint32 pressed,
 
 static void portal_send_paste(PortalData *app)
 {
+    /* Settle after modifier press(es) before the paste key. KWin on Plasma 6
+     * Wayland can otherwise deliver Insert/V before LeftShift/LeftCtrl is
+     * registered, so terminals see a bare key and drop the paste (issue #1230).
+     * uinput/XTest already insert a gap between modifier and key; match that. */
     if (app->mode == PASTE_MODE_SHIFT_INSERT) {
         portal_emit_key(app, PORTAL_KEY_LEFTSHIFT, 1, "Shift press");
+        usleep(20000);
         portal_emit_key(app, PORTAL_KEY_INSERT,    1, "Insert press");
         usleep(20000);
         portal_emit_key(app, PORTAL_KEY_INSERT,    0, "Insert release");
@@ -101,6 +106,7 @@ static void portal_send_paste(PortalData *app)
         portal_emit_key(app, PORTAL_KEY_LEFTCTRL, 1, "Ctrl press");
         if (use_shift)
             portal_emit_key(app, PORTAL_KEY_LEFTSHIFT, 1, "Shift press");
+        usleep(20000);
         portal_emit_key(app, PORTAL_KEY_V, 1, "V press");
         usleep(20000);
         portal_emit_key(app, PORTAL_KEY_V, 0, "V release");
