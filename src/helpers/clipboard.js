@@ -1560,8 +1560,13 @@ class ClipboardManager {
 
         // KDE with XWayland: portal first because clipboard and input are both
         // on X11. uinput causes clipboard desync (X11 clipboard vs Wayland input).
-        // GNOME: uinput first because the portal often times out or shows a
-        // confusing permission dialog, causing a 10s+ delay (issue #494).
+        // GNOME: portal first as well (issue #956). Mutter often drops modifier
+        // combos from the ephemeral linux-fast-paste --uinput device (especially
+        // when ydotoold's persistent device is also present), while the
+        // RemoteDesktop portal delivers reliably once approved. A one-time
+        // permission dialog beats silently broken paste; cached restore tokens
+        // make later pastes instant. When ydotoold is running, skip ephemeral
+        // uinput so we fall through to ydotool key on the shared device.
         if (isKde && linuxFastPaste && !this.portalDenied) {
           const portalPaste = await tryPortalPaste();
           if (portalPaste) return { method: "portal", ...portalPaste };
@@ -1572,19 +1577,27 @@ class ClipboardManager {
             debugLogger.warn("uinput paste failed", { error: uinputError?.message }, "clipboard");
           }
         } else if (isGnome && linuxFastPaste) {
-          try {
-            const uinputPaste = await tryUinputPaste();
-            return { method: "uinput", ...uinputPaste };
-          } catch (uinputError) {
-            debugLogger.warn(
-              "uinput paste failed on GNOME, trying portal",
-              { error: uinputError?.message },
-              "clipboard"
-            );
-          }
           if (!this.portalDenied) {
             const portalPaste = await tryPortalPaste();
             if (portalPaste) return { method: "portal", ...portalPaste };
+          }
+          if (ydotoolDaemonRunning) {
+            debugLogger.debug(
+              "Skipping ephemeral uinput on GNOME; ydotoold present, falling through to ydotool key",
+              {},
+              "clipboard"
+            );
+          } else {
+            try {
+              const uinputPaste = await tryUinputPaste();
+              return { method: "uinput", ...uinputPaste };
+            } catch (uinputError) {
+              debugLogger.warn(
+                "uinput paste failed on GNOME, falling back to system tools",
+                { error: uinputError?.message },
+                "clipboard"
+              );
+            }
           }
         } else {
           // Other compositors (wlroots, etc.): try uinput only
